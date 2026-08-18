@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-graph-parser-python"
+version = "0.1.0"
+description = "Python process parser for code-graph-engine"
+requires-python = ">=3.12"
+
+[project.scripts]
+code-graph-parser-python = "code_graph_parser_python.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["code_graph_parser_python*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
