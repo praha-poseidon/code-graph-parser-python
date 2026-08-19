@@ -5,9 +5,9 @@ one GraphDelta JSON without importing or executing the target project.
 
 Graph coverage includes Python packages/modules/classes/functions, `<module-init>`, calls,
 inheritance, Protocol implementation, overrides, source-proven receiver binding, stable
-placeholders, and FastAPI/Flask/Django/Django REST Framework HTTP endpoints. Framework
-detection is automatic; callers provide the existing project root/source files protocol and do
-not select a framework or supply route aliases.
+placeholders, and FastAPI/Flask/Flask-AppBuilder/Django/Django REST Framework HTTP endpoints.
+Framework detection is automatic; callers provide the existing project root/source files protocol
+and do not select a framework or supply route aliases.
 
 ```bash
 python3.12 -m unittest discover -s tests -v

@@ -921,7 +921,14 @@ def _endpoint_identity(endpoint_type: str, fields: Dict[str, str]) -> str:
 
 
 def _normalize_path(value: str) -> str:
-    result = re.sub(r"/+", "/", value.replace("\\", "/"))
+    result = value.strip()
+    result = result[1:] if result.startswith("^") else result
+    result = result[:-1] if result.endswith("$") else result
+    result = result.replace(r"\/", "/")
+    result = result.replace(r"\.", ".")
+    result = re.sub(r"\(\?P<[^>]+>[^)]*\)", "{param}", result)
+    result = re.sub(r"\(\?:\{param\}/?\)\?", "{param}", result)
+    result = re.sub(r"/+", "/", result)
     result = re.sub(r"<(?:(?:[^:>]+):)?[^>]+>", "{param}", result)
     result = re.sub(r"\{[^}/]+\}", "{param}", result)
     if result and not result.startswith("/"):
