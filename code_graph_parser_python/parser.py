@@ -107,8 +107,10 @@ class _State:
                     self._collect_class(file, imports, node, [])
                 elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     self._collect_function(file, imports, node, None, [])
+            for name, node in _assigned_lambdas(file.tree.body):
+                self._collect_lambda(file, imports, node, name, None, [])
         for class_info in self.classes.values():
-            class_info.bases = [_resolve_type(base, class_info.module, class_info.imports) for base in class_info.bases]
+            class_info.bases = [_resolve_base_type(base, class_info.module, class_info.imports) for base in class_info.bases]
             class_info.properties.update(_class_properties(class_info))
 
     def _collect_class(
@@ -116,8 +118,8 @@ class _State:
     ) -> None:
         qualified = ".".join([file.module_name] + owners + [node.name])
         raw_bases = [_annotation_name(base) for base in node.bases if _annotation_name(base)]
-        base_names = {name.split(".")[-1] for name in raw_bases}
-        unit_type = "interface" if base_names & {"Protocol"} else "class"
+        resolved_bases = {_resolve_base_type(name, file.module_name, imports) for name in raw_bases}
+        unit_type = "interface" if "typing.Protocol" in resolved_bases or "typing_extensions.Protocol" in resolved_bases else "class"
         info = ClassInfo(qualified, file.module_name, file, node, imports, raw_bases, unit_type=unit_type)
         self.classes[qualified] = info
         for child in node.body:
@@ -125,6 +127,8 @@ class _State:
                 self._collect_function(file, imports, child, qualified, owners + [node.name])
             elif isinstance(child, ast.ClassDef):
                 self._collect_class(file, imports, child, owners + [node.name])
+        for name, child in _assigned_lambdas(node.body):
+            self._collect_lambda(file, imports, child, name, qualified, owners + [node.name])
 
     def _collect_function(
         self,
@@ -145,6 +149,25 @@ class _State:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 nested_owners = owners + [name, "<locals>"]
                 self._collect_function(file, imports, child, None, nested_owners)
+
+    def _collect_lambda(
+        self,
+        file: ParsedPythonFile,
+        imports: ImportTable,
+        node: ast.Lambda,
+        name: str,
+        class_name: Optional[str],
+        owners: List[str],
+    ) -> None:
+        parts = name.split(".")
+        callable_name = parts[-1]
+        logical_owners = owners + parts[:-1]
+        prefix = ".".join([file.module_name] + logical_owners)
+        qualified = "%s::%s" % (prefix, callable_name) if logical_owners else "%s.%s" % (file.module_name, callable_name)
+        owner_id = unit_id(class_name or file.module_name)
+        info = FunctionInfo(qualified, file.module_name, file, node, imports, class_name, owner_id)
+        self.functions[qualified] = info
+        self.functions_by_simple.setdefault(callable_name, []).append(qualified)
 
     def emit_nodes(self, scan_files: Sequence[ParsedPythonFile]) -> None:
         for file in scan_files:
@@ -204,18 +227,19 @@ class _State:
         for info in self.functions.values():
             if info.file.project_file_path not in self.scan_paths:
                 continue
-            modifiers = _function_modifiers(info.node)
-            signature = _signature(info.node)
+            display_name = getattr(info.node, "name", _simple_function_name(info.qualified_name))
+            modifiers = _function_modifiers(info.node, display_name)
+            signature = _signature(info.node, display_name)
             node = _function_node(
                 self,
                 info.file,
                 info.qualified_name,
-                info.node.name,
+                display_name,
                 signature,
                 modifiers,
                 info.return_type or None,
                 isinstance(info.node, ast.AsyncFunctionDef),
-                info.node.name == "__init__",
+                display_name == "__init__",
                 info.node,
             )
             self.output_functions[node["id"]] = node
@@ -429,13 +453,14 @@ class _State:
         options = self.request.get("options") if isinstance(self.request.get("options"), dict) else {}
         preset = self.request.get("staticExtractPresetRules")
         if preset is None:
-            preset = options.get("staticExtractPresetRules", True)
+            preset = options.get("staticExtractPresetRules", False)
         rule_sources = self.request.get("ruleSources") if isinstance(self.request.get("ruleSources"), list) else []
+        rule_texts = self.request.get("ruleTexts") if isinstance(self.request.get("ruleTexts"), list) else []
         report = run_static_extract(
             project=str(self.project_root),
             ast_files=self.load_files,
-            rule_sources=[str(item) for item in rule_sources],
-            include_framework_presets=preset is not False,
+            rule_sources=[str(item) for item in list(rule_sources) + list(rule_texts)],
+            include_framework_presets=preset is True,
         )
         for fact in report.results:
             if fact.project_file_path not in self.scan_paths:
@@ -468,6 +493,7 @@ class _State:
             "isExternal": direction == "outbound",
             "parseLevel": fact.fields.get("parseLevel", "full"),
             "matchIdentity": match_identity,
+            "other": fact.fields.get("other"),
         }
         if endpoint_type == "HTTP":
             method = fact.fields.get("method", "ANY").upper()
@@ -480,7 +506,7 @@ class _State:
                 {
                     "endpointKind": "redis",
                     "command": fact.fields.get("command"),
-                    "keyPattern": fact.fields.get("keyPattern"),
+                    "keyPattern": fact.fields.get("keyPattern") or fact.fields.get("key"),
                 }
             )
         elif endpoint_type == "MQ":
@@ -496,7 +522,7 @@ class _State:
             base.update(
                 {
                     "endpointKind": "db",
-                    "tableName": fact.fields.get("tableName"),
+                    "tableName": fact.fields.get("tableName") or fact.fields.get("table"),
                     "dbOperation": fact.fields.get("dbOperation"),
                 }
             )
@@ -671,6 +697,11 @@ def _resolve_type(value: str, module: str, imports: ImportTable) -> str:
     return _resolve_reference(clean, module, imports)
 
 
+def _resolve_base_type(value: str, module: str, imports: ImportTable) -> str:
+    """Resolve the declared superclass/protocol itself, not its generic arguments."""
+    return _resolve_type(value.split("[", 1)[0], module, imports)
+
+
 def _annotation_name(value: Optional[ast.AST]) -> str:
     if value is None:
         return ""
@@ -780,6 +811,27 @@ def _expr_name(value: Optional[ast.AST]) -> str:
     return ""
 
 
+def _assigned_lambdas(body: Sequence[ast.stmt]) -> Iterable[Tuple[str, ast.Lambda]]:
+    """Yield statically named callables without executing project code."""
+    for statement in body:
+        target = ""
+        value: Optional[ast.AST] = None
+        if isinstance(statement, ast.Assign) and statement.targets:
+            target = _expr_name(statement.targets[0])
+            value = statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            target = _expr_name(statement.target)
+            value = statement.value
+        if not target or value is None:
+            continue
+        if isinstance(value, ast.Lambda):
+            yield target, value
+        elif isinstance(value, ast.Dict):
+            for key, item in zip(value.keys, value.values):
+                if isinstance(item, ast.Lambda) and isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    yield "%s.%s" % (target, key.value), item
+
+
 def _package_name(module: str, relative: str) -> str:
     if relative.endswith("/__init__.py"):
         return module
@@ -840,10 +892,11 @@ def _function_node(
     return result
 
 
-def _function_modifiers(node: ast.AST) -> List[str]:
+def _function_modifiers(node: ast.AST, name: str = "") -> List[str]:
     result: List[str] = []
     names = {
-        _expr_name(item.func if isinstance(item, ast.Call) else item).split(".")[-1] for item in node.decorator_list
+        _expr_name(item.func if isinstance(item, ast.Call) else item).split(".")[-1]
+        for item in getattr(node, "decorator_list", [])
     }
     if "staticmethod" in names:
         result.append("static")
@@ -853,16 +906,16 @@ def _function_modifiers(node: ast.AST) -> List[str]:
         result.append("abstract")
     if isinstance(node, ast.AsyncFunctionDef):
         result.append("async")
-    if node.name.startswith("__") and node.name.endswith("__"):
+    if name.startswith("__") and name.endswith("__"):
         result.append("dunder")
-    elif node.name.startswith("_"):
+    elif name.startswith("_"):
         result.append("private")
     else:
         result.append("public")
     return result
 
 
-def _signature(node: ast.AST) -> str:
+def _signature(node: ast.AST, name: str = "") -> str:
     arguments: List[str] = []
     positional = list(node.args.posonlyargs) + list(node.args.args)
     for arg in positional:
@@ -875,7 +928,7 @@ def _signature(node: ast.AST) -> str:
         arguments.append("%s%s" % (arg.arg, (": " + annotation) if annotation else ""))
     if node.args.kwarg:
         arguments.append("**" + node.args.kwarg.arg)
-    return "%s(%s)" % (node.name, ", ".join(arguments))
+    return "%s(%s)" % (name or getattr(node, "name", "<lambda>"), ", ".join(arguments))
 
 
 def _is_abstract_class(node: ast.ClassDef) -> bool:
@@ -914,10 +967,10 @@ def _endpoint_identity(endpoint_type: str, fields: Dict[str, str]) -> str:
         path = _normalize_path(fields.get("path", ""))
         return "%s:%s" % (fields.get("method", "ANY").upper(), path) if path else ""
     if endpoint_type == "REDIS":
-        return fields.get("keyPattern", "")
+        return fields.get("keyPattern") or fields.get("key", "")
     if endpoint_type == "MQ":
         return fields.get("topic", "")
-    return fields.get("tableName", "")
+    return fields.get("tableName") or fields.get("table", "")
 
 
 def _normalize_path(value: str) -> str:

@@ -5,9 +5,9 @@ one GraphDelta JSON without importing or executing the target project.
 
 Graph coverage includes Python packages/modules/classes/functions, `<module-init>`, calls,
 inheritance, Protocol implementation, overrides, source-proven receiver binding, stable
-placeholders, and FastAPI/Flask/Flask-AppBuilder/Django/Django REST Framework HTTP endpoints.
-Framework detection is automatic; callers provide the existing project root/source files protocol
-and do not select a framework or supply route aliases.
+placeholders, assigned lambdas, and caller-configured endpoint extraction. Framework preset
+detection is available only through explicit `staticExtractPresetRules: true`; it is disabled by
+default. With no SER, the basic graph is still emitted and endpoints are empty.
 
 ```bash
 python3.12 -m unittest discover -s tests -v
@@ -26,3 +26,6 @@ CODEGRAPH_PARSER_PYTHON_COMMAND="python3.12 -m code_graph_parser_python.cli --st
 The parser never imports or runs the target application. Python 3.12 is the parser runtime so
 one process can parse both older projects and current syntax such as `match`/`case`. See
 [`VALIDATION.md`](VALIDATION.md) for pinned real-project results.
+
+Endpoint `other` is an optional SER-produced string. HTTP, MQ, Redis, and DB identities use only
+their standard path/topic/key/table fields; `other` never changes an endpoint ID.
