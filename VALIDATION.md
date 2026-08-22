@@ -25,6 +25,6 @@ nested Django business routes.
 Example commands:
 
 ```bash
-python3.12 bin/code-graph-parser-python --project /repo/open-webui/backend --project-name open-webui --out /tmp/open-webui.json
-python3.12 bin/code-graph-parser-python --project /repo/netbox/netbox --project-name netbox --out /tmp/netbox.json
+python3.12 bin/parser-python --project /repo/open-webui/backend --project-name open-webui --out /tmp/open-webui.json
+python3.12 bin/parser-python --project /repo/netbox/netbox --project-name netbox --out /tmp/netbox.json
 ```

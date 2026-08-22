@@ -11,16 +11,16 @@ default. With no SER, the basic graph is still emitted and endpoints are empty.
 
 ```bash
 python3.12 -m unittest discover -s tests -v
-python3.12 -m code_graph_parser_python.cli --project /repo
+parser-python --project /repo
 echo '{"projectName":"demo","language":"python","projectRoot":"/repo","sourceFiles":[]}' \
-  | python3.12 -m code_graph_parser_python.cli --stdio
+  | parser-python --stdio
 ```
 
 Engine configuration:
 
 ```bash
 CODEGRAPH_PARSER_PROCESS_LANGUAGES=python
-CODEGRAPH_PARSER_PYTHON_COMMAND="python3.12 -m code_graph_parser_python.cli --stdio"
+CODEGRAPH_PARSER_PYTHON_COMMAND="parser-python --stdio"
 ```
 
 The parser never imports or runs the target application. Python 3.12 is the parser runtime so
