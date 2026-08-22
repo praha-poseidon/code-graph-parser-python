@@ -499,7 +499,7 @@ class _State:
             method = fact.fields.get("method", "ANY").upper()
             path = fact.fields.get("path", "")
             base.update(
-                {"endpointKind": "http", "httpMethod": method, "path": path, "normalizedPath": _normalize_path(path)}
+                {"endpointKind": "http", "httpMethod": method, "path": path, "normalizedPath": path}
             )
         elif endpoint_type == "REDIS":
             base.update(
@@ -593,6 +593,22 @@ class _State:
         line: Optional[int] = None,
         call_type: Optional[str] = None,
     ) -> None:
+        relationship_type = {
+            "EXTENDS": "PYTHON_INHERITS",
+            "IMPLEMENTS": "PYTHON_CONFORMS",
+            "OVERRIDES": "PYTHON_OVERRIDES",
+        }.get(relationship_type, relationship_type)
+        contracts = {
+            "PACKAGE_TO_UNIT": ("CONTAINS", "CodePackage", "CodeUnit"),
+            "UNIT_TO_FUNCTION": ("CONTAINS", "CodeUnit", "CodeFunction"),
+            "CALLS": ("CALL", "CodeFunction", "CodeFunction"),
+            "PYTHON_INHERITS": ("SPECIALIZES", "CodeUnit", "CodeUnit"),
+            "PYTHON_CONFORMS": ("CONFORMS", "CodeUnit", "CodeUnit"),
+            "PYTHON_OVERRIDES": ("REFINES", "CodeFunction", "CodeFunction"),
+            "ENDPOINT_TO_FUNCTION": ("BINDS_ENDPOINT", "CodeEndpoint", "CodeFunction"),
+            "FUNCTION_TO_ENDPOINT": ("BINDS_ENDPOINT", "CodeFunction", "CodeEndpoint"),
+        }
+        relationship_kind, from_node_type, to_node_type = contracts[relationship_type]
         key = "%s|%s|%s" % (from_id, relationship_type, to_id)
         if key in self.relationships:
             return
@@ -601,6 +617,9 @@ class _State:
             "fromNodeId": from_id,
             "toNodeId": to_id,
             "relationshipType": relationship_type,
+            "relationshipKind": relationship_kind,
+            "fromNodeType": from_node_type,
+            "toNodeType": to_node_type,
             "language": "python",
             "projectName": self.project_name,
         }
@@ -964,26 +983,10 @@ def _endpoint_type(fact: ExtractedFact) -> str:
 
 def _endpoint_identity(endpoint_type: str, fields: Dict[str, str]) -> str:
     if endpoint_type == "HTTP":
-        path = _normalize_path(fields.get("path", ""))
+        path = fields.get("path", "")
         return "%s:%s" % (fields.get("method", "ANY").upper(), path) if path else ""
     if endpoint_type == "REDIS":
         return fields.get("keyPattern") or fields.get("key", "")
     if endpoint_type == "MQ":
         return fields.get("topic", "")
     return fields.get("tableName") or fields.get("table", "")
-
-
-def _normalize_path(value: str) -> str:
-    result = value.strip()
-    result = result[1:] if result.startswith("^") else result
-    result = result[:-1] if result.endswith("$") else result
-    result = result.replace(r"\/", "/")
-    result = result.replace(r"\.", ".")
-    result = re.sub(r"\(\?P<[^>]+>[^)]*\)", "{param}", result)
-    result = re.sub(r"\(\?:\{param\}/?\)\?", "{param}", result)
-    result = re.sub(r"/+", "/", result)
-    result = re.sub(r"<(?:(?:[^:>]+):)?[^>]+>", "{param}", result)
-    result = re.sub(r"\{[^}/]+\}", "{param}", result)
-    if result and not result.startswith("/"):
-        result = "/" + result
-    return result[:-1] if len(result) > 1 and result.endswith("/") else result

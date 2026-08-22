@@ -50,8 +50,8 @@ class Service(Base):
         self.assertIn("app.service.helper()", functions)
         self.assertTrue(any(item.get("isPlaceholder") for item in delta["functions"]))
         relationship_types = {item["relationshipType"] for item in delta["relationships"]}
-        self.assertIn("EXTENDS", relationship_types)
-        self.assertIn("OVERRIDES", relationship_types)
+        self.assertIn("PYTHON_INHERITS", relationship_types)
+        self.assertIn("PYTHON_OVERRIDES", relationship_types)
         self.assertIn("CALLS", relationship_types)
         self.assertEqual(0, len(_dangling(delta)))
 
@@ -86,25 +86,37 @@ class Unrelated:
             for item in delta["relationships"]
         }
         expected = {
-            ("unit:service.Service", "EXTENDS", "unit:contracts.Base"),
-            ("unit:service.GatewayService", "IMPLEMENTS", "unit:contracts.Gateway"),
-            ("unit:service.Almost", "IMPLEMENTS", "unit:contracts.Partial"),
-            ("fn:service.Service::run()", "OVERRIDES", "fn:contracts.Base::run()"),
+            ("unit:service.Service", "PYTHON_INHERITS", "unit:contracts.Base"),
+            ("unit:service.GatewayService", "PYTHON_CONFORMS", "unit:contracts.Gateway"),
+            ("unit:service.Almost", "PYTHON_CONFORMS", "unit:contracts.Partial"),
+            ("fn:service.Service::run()", "PYTHON_OVERRIDES", "fn:contracts.Base::run()"),
             (
                 "fn:service.GatewayService::send()",
-                "OVERRIDES",
+                "PYTHON_OVERRIDES",
                 "fn:contracts.Gateway::send()",
             ),
-            ("fn:service.Almost::first()", "OVERRIDES", "fn:contracts.Partial::first()"),
+            ("fn:service.Almost::first()", "PYTHON_OVERRIDES", "fn:contracts.Partial::first()"),
         }
         self.assertTrue(expected.issubset(relationships.keys()), relationships.keys())
         self.assertNotIn(
-            ("fn:service.Unrelated::send()", "OVERRIDES", "fn:contracts.Gateway::send()"),
+            ("fn:service.Unrelated::send()", "PYTHON_OVERRIDES", "fn:contracts.Gateway::send()"),
             relationships,
         )
         for key in expected:
             item = relationships[key]
             self.assertEqual(relationship_id(*key), item["id"])
+            expected_contract = (
+                ("REFINES", "CodeFunction", "CodeFunction")
+                if key[1] == "PYTHON_OVERRIDES"
+                else (
+                    "CONFORMS" if key[1] == "PYTHON_CONFORMS" else "SPECIALIZES",
+                    "CodeUnit",
+                    "CodeUnit",
+                )
+            )
+            self.assertEqual(expected_contract[0], item["relationshipKind"])
+            self.assertEqual(expected_contract[1], item["fromNodeType"])
+            self.assertEqual(expected_contract[2], item["toNodeType"])
         self.assertEqual(0, len(_dangling(delta)))
 
     def test_fastapi_flask_and_django_endpoints_link_handlers(self):
@@ -210,13 +222,13 @@ build {
   endpointType: "HTTP"
   direction: "inbound"
   method: "POST"
-  path: path
+  path: path | normalize httpPath
   handler: handler
   other: "source=caller-ser"
 }
 dict {
-  handlers.handler() = /handler
-  handlers.handlers.save() = /save
+  handlers.handler() = /handler/{handlerId}
+  handlers.handlers.save() = /save/{saveId}
 }
 '''
         delta = self.parse(
@@ -227,6 +239,10 @@ dict {
         function_ids = {item["id"] for item in delta["functions"]}
         self.assertIn("fn:handlers.handler()", function_ids)
         self.assertIn("fn:handlers.handlers::save()", function_ids)
+        self.assertEqual(
+            {"HTTP:POST:/handler/{handlerId}", "HTTP:POST:/save/{saveId}"},
+            {item["matchIdentity"] for item in delta["endpoints"]},
+        )
         self.assertEqual({"source=caller-ser"}, {item["other"] for item in delta["endpoints"]})
         links = [item for item in delta["relationships"] if item["relationshipType"] == "ENDPOINT_TO_FUNCTION"]
         self.assertEqual(2, len(links))
