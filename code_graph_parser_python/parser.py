@@ -594,21 +594,20 @@ class _State:
         call_type: Optional[str] = None,
     ) -> None:
         relationship_type = {
-            "EXTENDS": "PYTHON_INHERITS",
-            "IMPLEMENTS": "PYTHON_CONFORMS",
-            "OVERRIDES": "PYTHON_OVERRIDES",
+            "EXTENDS": "INHERITS",
+            "IMPLEMENTS": "CONFORMS",
         }.get(relationship_type, relationship_type)
         contracts = {
-            "PACKAGE_TO_UNIT": ("CONTAINS", "CodePackage", "CodeUnit"),
-            "UNIT_TO_FUNCTION": ("CONTAINS", "CodeUnit", "CodeFunction"),
-            "CALLS": ("CALL", "CodeFunction", "CodeFunction"),
-            "PYTHON_INHERITS": ("SPECIALIZES", "CodeUnit", "CodeUnit"),
-            "PYTHON_CONFORMS": ("CONFORMS", "CodeUnit", "CodeUnit"),
-            "PYTHON_OVERRIDES": ("REFINES", "CodeFunction", "CodeFunction"),
-            "ENDPOINT_TO_FUNCTION": ("BINDS_ENDPOINT", "CodeEndpoint", "CodeFunction"),
-            "FUNCTION_TO_ENDPOINT": ("BINDS_ENDPOINT", "CodeFunction", "CodeEndpoint"),
+            "PACKAGE_TO_UNIT": ("CodePackage", "CodeUnit"),
+            "UNIT_TO_FUNCTION": ("CodeUnit", "CodeFunction"),
+            "CALLS": ("CodeFunction", "CodeFunction"),
+            "INHERITS": ("CodeUnit", "CodeUnit"),
+            "CONFORMS": ("CodeUnit", "CodeUnit"),
+            "OVERRIDES": ("CodeFunction", "CodeFunction"),
+            "ENDPOINT_TO_FUNCTION": ("CodeEndpoint", "CodeFunction"),
+            "FUNCTION_TO_ENDPOINT": ("CodeFunction", "CodeEndpoint"),
         }
-        relationship_kind, from_node_type, to_node_type = contracts[relationship_type]
+        from_node_type, to_node_type = contracts[relationship_type]
         key = "%s|%s|%s" % (from_id, relationship_type, to_id)
         if key in self.relationships:
             return
@@ -617,7 +616,6 @@ class _State:
             "fromNodeId": from_id,
             "toNodeId": to_id,
             "relationshipType": relationship_type,
-            "relationshipKind": relationship_kind,
             "fromNodeType": from_node_type,
             "toNodeType": to_node_type,
             "language": "python",
