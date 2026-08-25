@@ -1,5 +1,16 @@
 # code-graph-parser-python
 
+## Self-contained CLI release
+
+Each `v*` tag publishes `parser-python-<tag>-linux-x64.tar.gz`; Python and dependencies are embedded in the executable.
+
+```bash
+tar -xzf parser-python-*-linux-x64.tar.gz
+cd parser-python-*-linux-x64
+./install.sh
+parser-python --help
+```
+
 Python 3.12+ process parser for `code-graph-engine`. It reads one `ParseRequest` JSON and emits
 one GraphDelta JSON without importing or executing the target project.
 

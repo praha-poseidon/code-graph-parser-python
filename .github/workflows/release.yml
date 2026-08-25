@@ -1,0 +1,50 @@
+name: Release self-contained CLI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths: ['packaging/**', '.github/workflows/release.yml', 'code_graph_parser_python/**', 'pyproject.toml']
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out static extractor dependency
+        uses: actions/checkout@v7
+        with:
+          repository: praha-poseidon/static-extract-python
+          path: static-extract-python
+      - run: mv static-extract-python ../static-extract-python
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install pytest ../static-extract-python . && pytest -q
+      - run: ./packaging/build-linux-x64.sh "${GITHUB_REF_NAME:-dev}"
+      - name: Smoke test self-contained executable
+        run: |
+          package_dir="$(find target/release -maxdepth 1 -type d -name 'parser-python-*' | head -n 1)"
+          "$package_dir/bin/parser-python" --help
+      - uses: actions/upload-artifact@v7
+        with:
+          name: parser-python-linux-x64
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: linux-x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "$GITHUB_REF_NAME"
