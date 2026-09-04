@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: praha-poseidon/static-extract-python
+          ref: main
           path: static-extract-python
       - run: mv static-extract-python ../static-extract-python
       - uses: actions/setup-python@v6
